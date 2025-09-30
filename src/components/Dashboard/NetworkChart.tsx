@@ -9,25 +9,30 @@ interface NetworkChartProps {
 }
 
 export function NetworkChart({ data = [], loading = false }: NetworkChartProps) {
-  // Convert network stats to chart format
-  const chartData = data.slice(0, 24).reverse().map((stat, index) => ({
+  // Convert network stats to chart format (using KB for better resolution)
+  const chartData = data.slice(0, 24).reverse().map((stat) => ({
     time: new Date(stat.timestamp).toLocaleTimeString('en-US', { 
       hour: '2-digit', 
       minute: '2-digit' 
     }),
-    upload: Math.round(stat.bytes_out / (1024 * 1024)), // Convert to MB
-    download: Math.round(stat.bytes_in / (1024 * 1024)) // Convert to MB
+    upload: Math.round(stat.bytes_out / 1024), // Convert to KB
+    download: Math.round(stat.bytes_in / 1024)  // Convert to KB
   }));
 
-  // Fallback demo data if no real data
+  // Calculate max value for Y-axis domain with some padding
+  const allValues = chartData.flatMap(d => [d.upload, d.download]);
+  const maxValue = Math.max(...allValues, 100); // Ensure minimum scale of 100KB
+  const yDomain = [0, maxValue * 1.2]; // Add 20% padding to the top
+
+  // Fallback demo data if no real data (in KB)
   const fallbackData = [
-    { time: '00:00', upload: 24, download: 80 },
-    { time: '04:00', upload: 32, download: 95 },
-    { time: '08:00', upload: 45, download: 120 },
-    { time: '12:00', upload: 78, download: 180 },
-    { time: '16:00', upload: 65, download: 165 },
-    { time: '20:00', upload: 52, download: 140 },
-    { time: '24:00', upload: 38, download: 110 },
+    { time: '00:00', upload: 240, download: 800 },
+    { time: '04:00', upload: 320, download: 950 },
+    { time: '08:00', upload: 450, download: 1200 },
+    { time: '12:00', upload: 780, download: 1800 },
+    { time: '16:00', upload: 650, download: 1650 },
+    { time: '20:00', upload: 520, download: 1400 },
+    { time: '24:00', upload: 380, download: 1100 },
   ];
 
   const displayData = chartData.length > 0 ? chartData : fallbackData;
@@ -50,7 +55,10 @@ export function NetworkChart({ data = [], loading = false }: NetworkChartProps) 
           <>
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={displayData}>
+                <LineChart 
+                  data={displayData}
+                  margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
+                >
               <CartesianGrid 
                 strokeDasharray="3 3" 
                 stroke="hsl(var(--border))" 
@@ -64,10 +72,13 @@ export function NetworkChart({ data = [], loading = false }: NetworkChartProps) 
                 axisLine={false}
               />
               <YAxis 
+                domain={yDomain}
                 stroke="hsl(var(--muted-foreground))"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
+                width={60}
+                tickFormatter={(value) => `${value}KB`}
               />
               <Line
                 type="monotone"
@@ -94,11 +105,11 @@ export function NetworkChart({ data = [], loading = false }: NetworkChartProps) 
             <div className="flex items-center justify-center gap-6 mt-4">
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded-full bg-primary"></div>
-                <span className="text-sm text-muted-foreground">Download (MB)</span>
+                <span className="text-sm text-muted-foreground">Download (KB)</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="h-3 w-3 rounded-full bg-primary-bright"></div>
-                <span className="text-sm text-muted-foreground">Upload (MB)</span>
+                <span className="text-sm text-muted-foreground">Upload (KB)</span>
               </div>
             </div>
           </>

@@ -43,6 +43,7 @@ export interface Process {
   hash_sha256?: string;
   created_at: string;
   updated_at: string;
+  network_usage_kbps?: number;
 }
 
 export interface Connection {

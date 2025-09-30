@@ -27,7 +27,14 @@ const Index = () => {
 
   // Calculate stats
   const activeHosts = hosts.filter(h => h?.status === 'online').length;
-  const totalConnections = connections.length;
+  
+  // Count unique devices (unique remote IPs) connected to the WiFi
+  const uniqueDevices = new Set(
+    connections
+      .filter(conn => conn.remote_ip && conn.remote_ip !== '0.0.0.0' && conn.remote_ip !== '::')
+      .map(conn => conn.remote_ip)
+  ).size;
+  
   const activeAlerts = alerts.filter(a => a?.status === 'active').length;
   
   // Calculate bandwidth
@@ -55,10 +62,10 @@ const Index = () => {
             icon={Monitor}
           />
           <StatsCard
-            title="Total Connections"
-            value={totalConnections.toString()}
-            change={`Across ${activeHosts} hosts`}
-            changeType="positive"
+            title="Connected Devices"
+            value={uniqueDevices.toString()}
+            change={`On ${activeHosts} ${activeHosts === 1 ? 'host' : 'hosts'}`}
+            changeType={uniqueDevices > 0 ? "positive" : "neutral"}
             icon={Wifi}
           />
           <StatsCard

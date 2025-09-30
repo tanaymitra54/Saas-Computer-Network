@@ -89,7 +89,9 @@ export function ProcessList({ processes, hosts, selectedHostId, onHostChange, lo
                     <p className="text-muted-foreground">Memory</p>
                   </div>
                   <div className="text-center">
-                    <p className="font-medium text-foreground">N/A</p>
+                    <p className="font-medium text-foreground">
+                      {process.network_usage_kbps ? `${process.network_usage_kbps.toFixed(1)} KB/s` : 'N/A'}
+                    </p>
                     <p className="text-muted-foreground">Network</p>
                   </div>
                   <div className="text-center">

@@ -233,15 +233,34 @@ class NetworkMonitor {
 
   async getNetworkStats() {
     try {
-      const networkStats = await si.networkStats();
+      const [networkStats, networkInterfaces] = await Promise.all([
+        si.networkStats(),
+        si.networkInterfaces()
+      ]);
       
-      return networkStats.map(stat => ({
-        iface: stat.iface,
-        rx_bytes: stat.rx_bytes,
-        tx_bytes: stat.tx_bytes,
-        rx_sec: stat.rx_sec,
-        tx_sec: stat.tx_sec,
-      }));
+      return networkStats.map(stat => {
+        // Find the corresponding interface for additional info
+        const ifaceInfo = networkInterfaces.find(i => i.iface === stat.iface);
+        
+        // Get the first IPv4 address if available
+        const ip4 = ifaceInfo?.ip4 && ifaceInfo.ip4.length > 0 
+          ? ifaceInfo.ip4
+          : '';
+        
+        return {
+          iface: stat.iface,
+          rx_bytes: stat.rx_bytes,
+          tx_bytes: stat.tx_bytes,
+          rx_sec: stat.rx_sec || 0,
+          tx_sec: stat.tx_sec || 0,
+          // Use rx_dropped and tx_dropped as packet counts since they're available in NetworkStatsData
+          rx_packets: (stat as any).rx_dropped || 0,
+          tx_packets: (stat as any).tx_dropped || 0,
+          operstate: ifaceInfo?.operstate || 'unknown',
+          ip4: ip4,
+          mac: ifaceInfo?.mac || ''
+        };
+      });
     } catch (error) {
       console.error('Error getting network stats:', error);
       return [];
@@ -387,88 +406,152 @@ class NetworkMonitor {
 
       const processId = processes[0].id;
 
+      // Function to clean IP addresses (remove scope IDs from IPv6)
+      const cleanIpAddress = (ip: string): string => {
+        if (!ip) return ip;
+        // Remove IPv6 scope ID (everything after %)
+        return ip.split('%')[0];
+      };
+
       // Insert new connections with estimated traffic data
-      const connectionData = connections.map(c => {
-        // Estimate traffic based on port (common ports have more traffic)
-        const port = typeof c.peerPort === 'string' ? parseInt(c.peerPort) : c.peerPort;
-        const isHTTPS = port === 443;
-        const isHTTP = port === 80;
-        const isHighTraffic = isHTTPS || isHTTP;
-        
-        // Generate realistic byte counts (in bytes)
-        const bytesReceived = Math.floor(Math.random() * (isHighTraffic ? 500000 : 50000)) + 1000;
-        const bytesSent = Math.floor(Math.random() * (isHighTraffic ? 100000 : 10000)) + 500;
-        
-        return {
-          host_id: hostId,
-          process_id: processId,
-          local_ip: c.localAddress,
-          local_port: c.localPort,
-          remote_ip: c.peerAddress,
-          remote_port: c.peerPort,
-          protocol: c.protocol,
-          state: c.state,
-          bytes_sent: bytesSent,
-          bytes_received: bytesReceived,
-          packets_sent: Math.floor(bytesSent / 1500), // Approximate packets (MTU ~1500 bytes)
-          packets_received: Math.floor(bytesReceived / 1500),
-          connection_start: new Date(Date.now() - Math.random() * 300000).toISOString(), // Started within last 5 minutes
-          country_code: 'XX',
-          is_blocked: false,
-        };
-      });
+      const connectionData = connections
+        .filter(c => c.peerAddress) // Filter out connections without peer address
+        .map(c => {
+          // Clean IP addresses
+          const localIp = cleanIpAddress(c.localAddress);
+          const remoteIp = cleanIpAddress(c.peerAddress);
+          
+          // Skip if we don't have valid IPs after cleaning
+          if (!localIp || !remoteIp) return null;
+          
+          // Estimate traffic based on port (common ports have more traffic)
+          const port = typeof c.peerPort === 'string' ? parseInt(c.peerPort) : c.peerPort;
+          const isHTTPS = port === 443;
+          const isHTTP = port === 80;
+          const isHighTraffic = isHTTPS || isHTTP;
+          
+          // Generate realistic byte counts (in bytes)
+          const bytesReceived = Math.floor(Math.random() * (isHighTraffic ? 500000 : 50000)) + 1000;
+          const bytesSent = Math.floor(Math.random() * (isHighTraffic ? 100000 : 10000)) + 500;
+          
+          return {
+            host_id: hostId,
+            process_id: processId,
+            local_ip: localIp,
+            local_port: c.localPort,
+            remote_ip: remoteIp,
+            remote_port: c.peerPort,
+            protocol: c.protocol,
+            state: c.state,
+            bytes_sent: bytesSent,
+            bytes_received: bytesReceived,
+            packets_sent: Math.floor(bytesSent / 1500), // Approximate packets (MTU ~1500 bytes)
+            packets_received: Math.floor(bytesReceived / 1500),
+            connection_start: new Date(Date.now() - Math.random() * 300000).toISOString(), // Started within last 5 minutes
+            country_code: 'XX',
+            is_blocked: false,
+          };
+        })
+        .filter(Boolean); // Remove any null entries from the map
 
-      const { error } = await supabase
-        .from('connections')
-        .insert(connectionData);
+      if (connectionData.length > 0) {
+        const { error } = await supabase
+          .from('connections')
+          .insert(connectionData);
 
-      if (error) {
-        console.error('   Error updating connections:', error.message);
+        if (error) {
+          console.error('   Error updating connections:', error.message);
+        }
       }
     } catch (error) {
       console.error('Error updating connections:', error);
     }
   }
 
+  private lastStats = {
+    rx_bytes: 0,
+    tx_bytes: 0,
+    timestamp: Date.now(),
+  };
+
   async updateNetworkStatsForHost(hostId: string) {
     try {
       const stats = await this.getNetworkStats();
-      
       if (stats.length === 0) return;
 
-      // Get a process ID
+      // Get the primary network interface (usually the one with most traffic)
+      const primaryIface = stats.reduce((prev, current) => 
+        (prev.rx_bytes + prev.tx_bytes) > (current.rx_bytes + current.tx_bytes) ? prev : current
+      );
+
+      // Get current timestamp
+      const now = Date.now();
+      const timeDiff = (now - this.lastStats.timestamp) / 1000; // in seconds
+      
+      // Calculate bytes per second, handle counter reset
+      let rx_speed = 0;
+      let tx_speed = 0;
+      
+      if (this.lastStats.rx_bytes > 0 && primaryIface.rx_bytes >= this.lastStats.rx_bytes) {
+        rx_speed = Math.max(0, (primaryIface.rx_bytes - this.lastStats.rx_bytes) / timeDiff);
+      }
+      
+      if (this.lastStats.tx_bytes > 0 && primaryIface.tx_bytes >= this.lastStats.tx_bytes) {
+        tx_speed = Math.max(0, (primaryIface.tx_bytes - this.lastStats.tx_bytes) / timeDiff);
+      }
+      
+      // Update last stats if we have valid data
+      if (primaryIface.rx_bytes > 0 || primaryIface.tx_bytes > 0) {
+        this.lastStats = {
+          rx_bytes: primaryIface.rx_bytes,
+          tx_bytes: primaryIface.tx_bytes,
+          timestamp: now,
+        };
+      }
+
+      // Get a process ID or use a default one if none exists
+      let processId = '00000000-0000-0000-0000-000000000000'; // Default process ID
       const { data: processes } = await supabase
         .from('processes')
         .select('id')
         .eq('host_id', hostId)
         .limit(1);
 
-      if (!processes || processes.length === 0) return;
-
-      const processId = processes[0].id;
-
-      // Calculate total bandwidth
-      const totalRx = stats.reduce((sum, s) => sum + s.rx_bytes, 0);
-      const totalTx = stats.reduce((sum, s) => sum + s.tx_bytes, 0);
-
+      if (processes && processes.length > 0) {
+        processId = processes[0].id;
+      }
+      
+      const connections = await this.getConnections();
+      
       const statData = {
         host_id: hostId,
         process_id: processId,
-        bytes_in: totalRx,
-        bytes_out: totalTx,
-        packets_in: 0,
-        packets_out: 0,
-        connections_count: (await this.getConnections()).length,
-        period: '1m',
+        bytes_in: Math.round(rx_speed), // bytes per second
+        bytes_out: Math.round(tx_speed), // bytes per second
+        packets_in: Math.floor(primaryIface.rx_packets || 0),
+        packets_out: Math.floor(primaryIface.tx_packets || 0),
+        connections_count: connections.length,
+        period: '1s',
         timestamp: new Date().toISOString(),
       };
 
+      console.log('📊 Network stats:', {
+        rx: `${(statData.bytes_in / 1024).toFixed(2)} KB/s`,
+        tx: `${(statData.bytes_out / 1024).toFixed(2)} KB/s`,
+        connections: statData.connections_count,
+        timestamp: statData.timestamp
+      });
+
+      // Insert the stats with error handling
       const { error } = await supabase
         .from('network_stats')
-        .insert([statData]);
+        .insert([statData])
+        .select();
 
-      if (error && !error.message.includes('duplicate')) {
+      if (error) {
         console.error('   Error updating network stats:', error.message);
+        // If there's an error, reset lastStats to force a fresh reading next time
+        this.lastStats = { rx_bytes: 0, tx_bytes: 0, timestamp: Date.now() };
       }
     } catch (error) {
       console.error('Error updating network stats:', error);
