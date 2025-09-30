@@ -2,11 +2,11 @@ import { StatsCard } from "@/components/Dashboard/StatsCard";
 import { NetworkChart } from "@/components/Dashboard/NetworkChart";
 import { ProcessList } from "@/components/Dashboard/ProcessList";
 import { ConnectionsTable } from "@/components/Dashboard/ConnectionsTable";
-import { AlertsList } from "@/components/Dashboard/AlertsList";
+import { NetworkSpeedGauge } from "@/components/Dashboard/NetworkSpeedGauge";
 import { useRealTimeData } from "@/hooks/useRealTimeData";
 import { 
   Monitor, 
-  Shield, 
+  Activity,
   Wifi,
   TrendingUp
 } from "lucide-react";
@@ -35,13 +35,22 @@ const Index = () => {
       .map(conn => conn.remote_ip)
   ).size;
   
-  const activeAlerts = alerts.filter(a => a?.status === 'active').length;
-  
-  // Calculate bandwidth
+  // Calculate bandwidth usage
   const recentStats = networkStats?.slice(0, 60) || [];
   const totalBandwidth = recentStats.reduce((sum, stat) => 
     sum + (stat?.bytes_in || 0) + (stat?.bytes_out || 0), 0
-  ) / (1024 * 1024 * 1024); // Convert to GB
+  ) / (1024 * 1024); // Convert to MB
+  
+  // Calculate current network speed in Mbps
+  let currentSpeed = 0;
+  if (recentStats.length >= 2) {
+    const [prev, current] = recentStats.slice(-2);
+    const timeDiff = (new Date(current.timestamp).getTime() - new Date(prev.timestamp).getTime()) / 1000;
+    if (timeDiff > 0) {
+      const bytesDiff = (current.bytes_in + current.bytes_out) - (prev.bytes_in + prev.bytes_out);
+      currentSpeed = (bytesDiff * 8) / (timeDiff * 1000000); // Convert to Mbps
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -76,11 +85,11 @@ const Index = () => {
             icon={TrendingUp}
           />
           <StatsCard
-            title="Security Alerts"
-            value={activeAlerts.toString()}
-            change={activeAlerts > 0 ? "Requires attention" : "All clear"}
-            changeType={activeAlerts > 0 ? "negative" : "positive"} 
-            icon={Shield}
+            title="Current Speed"
+            value={`${currentSpeed.toFixed(1)} Mbps`}
+            change="Real-time network speed"
+            changeType="neutral"
+            icon={Activity}
           />
         </div>
 
@@ -93,10 +102,9 @@ const Index = () => {
               selectedHostId={selectedHostId}
             />
           </div>
-          <AlertsList 
-            alerts={alerts}
+          <NetworkSpeedGauge 
+            networkStats={networkStats}
             loading={loading}
-            onRefresh={refreshData}
           />
         </div>
 
