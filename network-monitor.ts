@@ -3,8 +3,8 @@ import si from 'systeminformation';
 import { execSync, exec } from 'child_process';
 import os from 'os';
 
-const supabaseUrl = 'https://hrywyemuegawfneldwow.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhyeXd5ZW11ZWdhd2ZuZWxkd293Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkxNzI3MDksImV4cCI6MjA3NDc0ODcwOX0.IG3ck7c9Ha6UWPhNFfS8g2u2LfJe41l4gklvB3VjXqI';
+const supabaseUrl = 'https://gvtvmfudfkzskpiwjyat.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd2dHZtZnVkZmt6c2twaXdqeWF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIyNjI0MzgsImV4cCI6MjA3NzgzODQzOH0.3h_PIKkhZ-89MmSqn42sFUUwR3tAte7uW8nxfK0KtTI';
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -27,7 +27,7 @@ interface ProcessInfo {
 }
 
 class NetworkMonitor {
-  private orgId: string = DEMO_ORG_ID;
+  private orgId: string = '9f6e2b2b-a5a2-44a6-a6d8-48e918e87396';
   private updateInterval: number = 10000; // 10 seconds
   private isRunning: boolean = false;
 
@@ -52,29 +52,7 @@ class NetworkMonitor {
   }
 
   async ensureOrganization() {
-    const { data, error } = await supabase
-      .from('organizations')
-      .upsert([
-        {
-          id: this.orgId,
-          name: 'My Network',
-          owner_id: DEMO_USER_ID,
-        }
-      ], { onConflict: 'id' })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error creating organization:', error);
-      console.log('\n⚠️  Please disable RLS on tables first. Run this in Supabase SQL Editor:');
-      console.log('ALTER TABLE organizations DISABLE ROW LEVEL SECURITY;');
-      console.log('ALTER TABLE hosts DISABLE ROW LEVEL SECURITY;');
-      console.log('ALTER TABLE processes DISABLE ROW LEVEL SECURITY;');
-      console.log('ALTER TABLE connections DISABLE ROW LEVEL SECURITY;');
-      console.log('ALTER TABLE network_stats DISABLE ROW LEVEL SECURITY;');
-      console.log('ALTER TABLE alerts DISABLE ROW LEVEL SECURITY;\n');
-      process.exit(1);
-    }
+    console.log(`✓ Using organization: ${this.orgId}\n`);
   }
 
   async getCurrentNetwork() {

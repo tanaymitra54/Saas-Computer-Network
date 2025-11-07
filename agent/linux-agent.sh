@@ -4,7 +4,7 @@
 # Copyright © github.com/odaysec
 
 # Configuration
-SERVER_URL="https://unksgpuqownlysedeoyi.supabase.co"
+SERVER_URL="https://gvtvmfudfkzskpiwjyat.supabase.co"
 AGENT_TOKEN=""
 UPDATE_INTERVAL=60
 HOSTNAME=$(hostname)
